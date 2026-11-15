@@ -143,10 +143,14 @@ IOService *NativeUfs::probe (IOService *provider, SInt32 *score)
   bool match = false;
   if (data) {
     const char *text = static_cast<const char *> (data->getBytesNoCopy ());
-    match = text && contains (text, data->getLength (), "qcom,sm8550-ufshc");
+    match = text && (contains (text, data->getLength (), "qcom,sm8550-ufshc") ||
+                     contains (text, data->getLength (), "qcom,sm8250-ufshc") ||
+                     contains (text, data->getLength (), "qcom,ufshc"));
   } else if (string) {
     const char *text = string->getCStringNoCopy ();
-    match = text && contains (text, string->getLength (), "qcom,sm8550-ufshc");
+    match = text && (contains (text, string->getLength (), "qcom,sm8550-ufshc") ||
+                     contains (text, string->getLength (), "qcom,sm8250-ufshc") ||
+                     contains (text, string->getLength (), "qcom,ufshc"));
   }
   if (!match) {
     return nullptr;
@@ -1271,8 +1275,16 @@ static bool hostBringUp (const char **why)
   uint32_t report[3] = { 0, 0, 0 };
   gRootDiagnostic.stage = "SMMU and request list";
   if (!hostStopQueue (why)) return false;
-  smmuBypassStream (0x60, gHost.smmuMap, report, gHost.phys, gHost.dmaBytes);
+  uint32_t stream = 0x60;
+  PE_parse_boot_argn ("native-ufs-stream", &stream, sizeof (stream));
+  smmuBypassStream (static_cast<uint16_t> (stream), gHost.smmuMap, report, gHost.phys, gHost.dmaBytes);
   gHost.smmu = gHost.smmuMap->getVirtualAddress ();
+  uint32_t stream2 = 0;
+  if (PE_parse_boot_argn ("native-ufs-stream2", &stream2, sizeof (stream2)) && stream2 != 0) {
+    static OSSharedPtr<IOMemoryMap> extraUfsMap;
+    uint32_t extraUfsReport[3] = { 0, 0, 0 };
+    smmuBypassStream (static_cast<uint16_t> (stream2), extraUfsMap, extraUfsReport, gHost.phys, gHost.dmaBytes);
+  }
   // The board's WiFi endpoint (wifi=2 or more) needs a pass-through stream of its own, set up here with the same code and at the same moment as the
   // storage stream: the registers of the stream matching group are not safe to touch from another thread later (a read of the first one never returned).
   uint32_t wifi = 0;
