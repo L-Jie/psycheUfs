@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 // Native sheng SM8550 UFS bring-up. Default-off: no MMIO is touched unless
 // native-ufs-probe=1 is present. This is a register probe, not a storage driver.
+#pragma clang diagnostic ignored "-Wmissing-designated-field-initializers"
 #include <IOKit/IOService.h>
 #include <IOKit/IOPlatformExpert.h>
 #include <IOKit/storage/IOBlockStorageDevice.h>
