@@ -105,8 +105,9 @@ static bool findRootLayout (RootLayout *layout, const char **why)
     *why = "GPT entries CRC";
     return false;
   }
-  static const char wanted[] = "userdata";
-  bool found = false;
+  uint64_t unixnuFirst = 0, unixnuLast = 0;
+  uint64_t userdataFirst = 0, userdataLast = 0;
+  bool foundUnixnu = false, foundUserdata = false;
   for (uint32_t index = 0; index < count; index++) {
     const uint8_t *entry = gScratch + index * 128;
     if (!rootEntryUsed (entry)) continue;
@@ -122,24 +123,51 @@ static bool findRootLayout (RootLayout *layout, const char **why)
         return false;
       }
     }
-    bool match = true;
-    for (unsigned c = 0; c < sizeof (wanted); c++) {
-      if (entry[56 + 2 * c] != static_cast<uint8_t> (wanted[c]) || entry[57 + 2 * c] != 0) {
-        match = false;
+    static const char unixnuName[] = "unixnu";
+    bool matchUnixnu = true;
+    for (unsigned c = 0; c < sizeof (unixnuName); c++) {
+      if (entry[56 + 2 * c] != static_cast<uint8_t> (unixnuName[c]) || entry[57 + 2 * c] != 0) {
+        matchUnixnu = false;
         break;
       }
     }
-    if (match) {
-      if (found) {
+    static const char userdataName[] = "userdata";
+    bool matchUserdata = true;
+    for (unsigned c = 0; c < sizeof (userdataName); c++) {
+      if (entry[56 + 2 * c] != static_cast<uint8_t> (userdataName[c]) || entry[57 + 2 * c] != 0) {
+        matchUserdata = false;
+        break;
+      }
+    }
+    if (matchUnixnu) {
+      if (foundUnixnu) {
+        *why = "duplicate unixnu partition";
+        return false;
+      }
+      unixnuFirst = entryFirst;
+      unixnuLast = entryLast;
+      foundUnixnu = true;
+    } else if (matchUserdata) {
+      if (foundUserdata) {
         *why = "duplicate userdata partition";
         return false;
       }
-      layout->userdataFirst = le64 (entry + 32);
-      layout->userdataLast = le64 (entry + 40);
-      found = true;
+      userdataFirst = entryFirst;
+      userdataLast = entryLast;
+      foundUserdata = true;
     }
   }
-  if (!found || layout->userdataLast < layout->userdataFirst) {
+  if (foundUnixnu) {
+    layout->userdataFirst = unixnuFirst;
+    layout->userdataLast = unixnuLast;
+  } else if (foundUserdata) {
+    layout->userdataFirst = userdataFirst;
+    layout->userdataLast = userdataLast;
+  } else {
+    *why = "no userdata partition";
+    return false;
+  }
+  if (layout->userdataLast < layout->userdataFirst) {
     *why = "no userdata partition";
     return false;
   }
