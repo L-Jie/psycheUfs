@@ -3074,7 +3074,11 @@ void NativeUfs::stop (IOService *provider)
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #undef super
 #define super IOService
-OSDefineMetaClassAndAbstractStructors(IOBlockStorageDevice, IOService)
+OSDefineMetaClassWithInit(IOBlockStorageDevice, IOService, )
+IOBlockStorageDevice::MetaClass::MetaClass()
+    : OSMetaClass("UniXNUBlockStorageDevice", IOBlockStorageDevice::superClass, sizeof(IOBlockStorageDevice)) {}
+OSDefineAbstractStructors(IOBlockStorageDevice, IOService)
+OSDefineOperatorMethods(IOBlockStorageDevice)
 
 bool
 IOBlockStorageDevice::init(OSDictionary * properties)
