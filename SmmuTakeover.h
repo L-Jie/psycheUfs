@@ -19,7 +19,7 @@ static unsigned ufsSmmuAddressBits(unsigned code)
 }
 // One attempt with a given context bank (counted from the top). The caller falls back to lower banks when this one is held by another stream.
 template <class Read>
-static UfsSmmuPlan planUfsSmmuBank(uint16_t stream, uint64_t dma, uint64_t bytes, Read read, unsigned bankFromTop)
+static UfsSmmuPlan planUfsSmmuBank(uint16_t stream, uint64_t dma, uint64_t bytes, Read read, unsigned bankFromTop, bool takeover = false)
 {
   UfsSmmuPlan p;
   uint32_t idr0 = read(0x20), idr2 = read(0x28);
@@ -56,19 +56,28 @@ static UfsSmmuPlan planUfsSmmuBank(uint16_t stream, uint64_t dma, uint64_t bytes
     bool ourBank = ((s2cr >> 16) & 3) == 0 && (s2cr & 255) == p.bank;
     if (match) {
       ++matches;
-      if (matches > 1 || mask || !ourBank) {
+      if (matches > 1 || mask) {
         p.slot = i; p.smr = smr; p.s2cr = s2cr;
         p.error = "conflicting UFS stream mapping"; return p;
       }
-      p.reuse = true; p.slot = i;
+      p.slot = i; p.smr = smr; p.s2cr = s2cr;
+      if (takeover && !ourBank) {
+        p.bank = s2cr & 255;
+        p.reuse = false;
+        continue;
+      }
+      if (!ourBank) {
+        p.error = "conflicting UFS stream mapping"; return p;
+      }
+      p.reuse = true;
     } else if (ourBank) {
       p.slot = i; p.smr = smr; p.s2cr = s2cr;
       p.error = "reserved context bank already used"; return p;
     }
   }
   uint32_t sctlr = read((p.pages + p.bank) * 4096);
-  if ((sctlr & 1) || (p.reuse && (sctlr || read(0x1000 + 4 * p.bank) != 0x10000 ||
-                                (read(0x1800 + 4 * p.bank) & ~1U)))) {
+  if (!takeover && ((sctlr & 1) || (p.reuse && (sctlr || read(0x1000 + 4 * p.bank) != 0x10000 ||
+                                (read(0x1800 + 4 * p.bank) & ~1U))))) {
     p.error = "reserved context bank not bypass"; return p;
   }
   if (p.slot == 0xffffffffU) p.error = "no free stream-match group";
@@ -80,10 +89,10 @@ static UfsSmmuPlan planUfsSmmuBank(uint16_t stream, uint64_t dma, uint64_t bytes
 // (no other valid stream maps it, translation off). Any other refusal (a conflicting mapping of our own stream, no free group, unsupported geometry)
 // is final and is reported as the first attempt saw it.
 template <class Read>
-static UfsSmmuPlan planUfsSmmu(uint16_t stream, uint64_t dma, uint64_t bytes, Read read)
+static UfsSmmuPlan planUfsSmmu(uint16_t stream, uint64_t dma, uint64_t bytes, Read read, bool takeover = false)
 {
-  enum {kBankAttempts = 8};
-  UfsSmmuPlan first = planUfsSmmuBank(stream, dma, bytes, read, 0);
+  const unsigned kBankAttempts = takeover ? 128 : 8;
+  UfsSmmuPlan first = planUfsSmmuBank(stream, dma, bytes, read, 0, takeover);
   if (!first.error) return first;
   // "conflicting" is retried too: our own stream may already sit on a lower bank from an earlier run that had to fall back.
   auto retryable = [](const char *e) {
@@ -92,7 +101,7 @@ static UfsSmmuPlan planUfsSmmu(uint16_t stream, uint64_t dma, uint64_t bytes, Re
   };
   if (!retryable(first.error)) return first;
   for (unsigned attempt = 1; attempt < kBankAttempts; ++attempt) {
-    UfsSmmuPlan next = planUfsSmmuBank(stream, dma, bytes, read, attempt);
+    UfsSmmuPlan next = planUfsSmmuBank(stream, dma, bytes, read, attempt, takeover);
     if (!next.error) return next;
     if (!retryable(next.error)) break;
   }

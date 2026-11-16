@@ -418,7 +418,9 @@ static void smmuBypassStream (uint16_t stream, OSSharedPtr<IOMemoryMap> &keep, u
   if (!smmu) {
     panic ("NATIVE_UFS smmu: map failed");
   }
-  UfsSmmuPlan plan = planUfsSmmu (stream, dma, bytes, [smmu](unsigned offset) { return read32 (smmu, offset); });
+  uint32_t takeover = 1;
+  PE_parse_boot_argn ("native-ufs-smmu-takeover", &takeover, sizeof (takeover));
+  UfsSmmuPlan plan = planUfsSmmu (stream, dma, bytes, [smmu](unsigned offset) { return read32 (smmu, offset); }, takeover != 0);
   gRootDiagnostic.smmuId1 = read32 (smmu, 0x24);
   gRootDiagnostic.smmuId2 = read32 (smmu, 0x28);
   gRootDiagnostic.smmuSlot = plan.slot;
