@@ -63,7 +63,7 @@ static UfsSmmuPlan planUfsSmmuBank(uint16_t stream, uint64_t dma, uint64_t bytes
       p.slot = i; p.smr = smr; p.s2cr = s2cr;
       if (takeover && !ourBank) {
         p.bank = s2cr & 255;
-        p.reuse = false;
+        p.reuse = true;
         continue;
       }
       if (!ourBank) {
@@ -117,12 +117,12 @@ static const char *configureUfsSmmu(const UfsSmmuPlan &p, uint16_t stream, Read 
   if (p.error) return p.error;
   unsigned cb = (p.pages + p.bank) * 4096;
   if (!p.reuse) write(cb, 0);
-  if (read(cb) != 0) return "SMMU bypass disable readback";
+  if (!p.reuse && read(cb) != 0) return "SMMU bypass disable readback";
   // Set VA64 before exposing a newly allocated stream. Repair an exclusive
   // existing 32-bit bypass too; do not silently reuse the faulty state.
   if (read(0x1800 + 4 * p.bank) != 1) write(0x1800 + 4 * p.bank, 1);
   if (!p.reuse) write(0x1000 + 4 * p.bank, 0x10000);
-  if (read(0x1800 + 4 * p.bank) != 1 || read(0x1000 + 4 * p.bank) != 0x10000 || read(cb) != 0)
+  if (read(0x1800 + 4 * p.bank) != 1 || (!p.reuse && (read(0x1000 + 4 * p.bank) != 0x10000 || read(cb) != 0)))
     return "SMMU VA64 bypass readback";
   if (!p.reuse) {
     write(0xc00 + 4 * p.slot, p.bank);
